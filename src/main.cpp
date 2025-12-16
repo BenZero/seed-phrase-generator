@@ -24,6 +24,7 @@ extern "C" {
 std::string save_found_path = "found_wallets.txt";
 
 std::string walletgen_path;
+const char* TYPE = "Offline";
 
 void set_color(int color = 7) {
     SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), color);
@@ -65,12 +66,10 @@ int show_menu() {
     std::cout << "\033[34m============================================================================\n";
     std::cout << "\033[38;5;214m[1]\033[94m - generate one BTC wallet                                              \033[34m=\n";
     std::cout << "\033[38;5;214m[2]\033[94m - generate one EVM wallet (ETH, BNB, MATIC e.t.c)                      \033[34m=\n";
-    std::cout << "\033[38;5;214m[3]\033[94m - search BTC wallets with balance (using the Internet - slower)        \033[34m=\n";
-    std::cout << "\033[38;5;214m[4]\033[94m - search BTC wallets with balance (using the database - faster)        \033[34m=\n";
-    std::cout << "\033[38;5;214m[5]\033[94m - search EVM wallets with balance (using the Internet - slower)        \033[34m=\n";
-    std::cout << "\033[38;5;214m[6]\033[94m - search EVM wallets with balance (using the database - faster)        \033[34m=\n";
-    std::cout << "\033[38;5;214m[7]\033[94m - support the developer                                                \033[34m=\n";
-    std::cout << "\033[38;5;214m[8]\033[94m - exit                                                                 \033[34m=\n";
+    std::cout << "\033[38;5;214m[3]\033[94m - search BTC wallets with balance (using local dumps)                  \033[34m=\n";
+    std::cout << "\033[38;5;214m[4]\033[94m - search EVM wallets with balance (using local dumps)                  \033[34m=\n";
+    std::cout << "\033[38;5;214m[5]\033[94m - support the developer                                                \033[34m=\n";
+    std::cout << "\033[38;5;214m[6]\033[94m - exit                                                                 \033[34m=\n";
     std::cout << "\033[34m============================================================================\n";
     set_color(7);
 
@@ -134,8 +133,8 @@ void save_wallet_data(wallet wal, wallet_data wal_data, int type) {
 
 }
 
-void start_search_btc_wallets(int way = 0);
-void start_search_evm_wallets(int way = 0);
+void start_search_btc_wallets(int way = 1);
+void start_search_evm_wallets(int way = 1);
 
 
 int main(int argc, char** argv) {
@@ -204,21 +203,15 @@ int main(int argc, char** argv) {
             print_wallet(wal, 1);
         }
         else if (action == 3) {
-            start_search_btc_wallets(0);
-        }
-        else if (action == 4) {
             start_search_btc_wallets(1);
         }
-        else if (action == 5) {
-             start_search_evm_wallets(0);
-        }
-        else if (action == 6) {
+        else if (action == 4) {
             start_search_evm_wallets(1);
         }
-        else if (action == 7) {
+        else if (action == 5) {
             print_donate_info();
         }
-        else if (action == 8) { 
+        else if (action == 6) {
             break;
         }
         else {
@@ -236,30 +229,23 @@ void start_search_btc_wallets(int way)
 {
     wallet_checker checker;
     if (!checker.initialize(way)) {
-        MessageBoxA(GetConsoleWindow(), "Failed to initialize checker. check your internet connection", "Message", MB_ICONERROR);
+        MessageBoxA(GetConsoleWindow(), "Failed to initialize checker. load local database dumps first.", "Message", MB_ICONERROR);
         return;
     }
 
-    if (way == 0) {
-        if (coingecko_api::get_btc_udst_price() == 0.0f) {
-            MessageBoxA(GetConsoleWindow(), "Failed to connect to the Coingecko API", "Message", MB_ICONWARNING);
-            return;
-        }
+    if (!wallets_data_base::btc_database_exists()) {
+        set_color(4);
+        std::cout << "[Error]\nFailed to load BTC wallets database from '" << BTC_WAL_DATABASE_NAME << "'.\n";
+        std::cout << "Place your dumped address list (txt/tsv with <address> <balance>) next to the executable.\n";
+        set_color(7);
+        return;
     }
-    else {
-        if (!wallets_data_base::btc_database_exists()) {
-            set_color(4);
-            std::cout << "[Error]\nFailed to load BTC wallets data base from '" << BTC_WAL_DATABASE_NAME << "'.\nDownload this file to https://github.com/tony-dev-btc/walletgen/releases/tag/database\nAnd move to " << walletgen_path << "\n";
-            set_color(7);
-            return;
-        }
 
-        std::cout << "Loading the BTC database from " BTC_WAL_DATABASE_NAME << "...\n";
-        wallets_data_base::load_btc_database();
-    }
+    std::cout << "Loading the BTC database from " BTC_WAL_DATABASE_NAME << "...\n";
+    wallets_data_base::load_btc_database();
 
     unsigned long long checked_mnemonics = 0;
-    float found_balance = 0.0f;
+    double found_balance = 0.0f;
     int speed = 0, speed_check = 0, mnemonics_by_sec = 0;
     std::cout << std::fixed << std::setprecision(4);
  
@@ -274,10 +260,10 @@ void start_search_btc_wallets(int way)
 
         if (wal_data.btc_amount > 0) {
             save_wallet_data(wal, wal_data, WAL_TYPE_BTC);
-            found_balance += wal_data.btc_amount * coingecko_api::get_btc_udst_price();
+            found_balance += wal_data.btc_amount;
 
             std::string new_title = "[WalletGen | " + std::string(TYPE) + "] - Found BTC wallet / [Checked mnemonics: " + std::to_string(checked_mnemonics) + " | Found balance: " + std::to_string(found_balance) +
-                "$ | Speed: " + std::to_string(speed) + "/s]";
+                " btc | Speed: " + std::to_string(speed) + "/s]";
             SetConsoleTitleA(new_title.c_str());
             print_wallet(wal, WAL_TYPE_BTC);
             system("pause");
@@ -290,8 +276,8 @@ void start_search_btc_wallets(int way)
 
 
         if(checked_mnemonics % 100 == 0){
-            std::string new_title = "[WalletGen | " + std::string(TYPE) + "] - Seaching for BTC wallets / [Checked mnemonics: " + std::to_string(checked_mnemonics) + " | Found balance: " + std::to_string(found_balance) + 
-                "$ | Speed: " + std::to_string(speed) + "/s]";
+            std::string new_title = "[WalletGen | " + std::string(TYPE) + "] - Seaching for BTC wallets / [Checked mnemonics: " + std::to_string(checked_mnemonics) + " | Found balance: " + std::to_string(found_balance) +
+                " btc | Speed: " + std::to_string(speed) + "/s]";
             SetConsoleTitleA(new_title.c_str());
             }
 
@@ -307,29 +293,23 @@ void start_search_evm_wallets(int way)
 {
     wallet_checker checker;
     if (!checker.initialize(way)) {
-        MessageBoxA(GetConsoleWindow(), "Failed to initialize checker. check your internet connection", "Message", MB_ICONERROR);
+        MessageBoxA(GetConsoleWindow(), "Failed to initialize checker. load local database dumps first.", "Message", MB_ICONERROR);
         return;
     }
-    if (way == 0) {
-        if (coingecko_api::get_btc_udst_price() == 0.0f) {
-            MessageBoxA(GetConsoleWindow(), "Failed to connect to the Coingecko API", "Message", MB_ICONWARNING);
-            return;
-        }
-    }
-    else {
-        if (!wallets_data_base::evm_database_exists()) {
-            set_color(4);
-            std::cout << "[Error]\nFailed to load EVM wallets data base from '" << EVM_WAL_DATABASE_NAME << "'.\nDownload this file to https://github.com/tony-dev1/walletgen/releases/tag/database\n And move to " << walletgen_path << "\n";
-            set_color(7);
-            return;
-        }
 
-        std::cout << "Loading the ETH database from " EVM_WAL_DATABASE_NAME << "...\n";
-        wallets_data_base::load_evm_database();
+    if (!wallets_data_base::evm_database_exists()) {
+        set_color(4);
+        std::cout << "[Error]\nFailed to load EVM wallets database from '" << EVM_WAL_DATABASE_NAME << "'.\n";
+        std::cout << "Place your dumped address list (txt/tsv with <address> <balance>) next to the executable.\n";
+        set_color(7);
+        return;
     }
+
+    std::cout << "Loading the ETH database from " EVM_WAL_DATABASE_NAME << "...\n";
+    wallets_data_base::load_evm_database();
 
     unsigned long long checked_mnemonics = 0;
-    float found_balance = 0.0f;
+    double found_balance = 0.0f;
     int speed = 0, speed_check = 0, mnemonics_by_sec = 0;
 
     while (true) {
@@ -337,8 +317,6 @@ void start_search_evm_wallets(int way)
         std::string mnemonic = std::string(mnemonic_generate(128));
         wallet wal = generate_evm_wallet(mnemonic);
         wallet_data wal_data = checker.get_wallet_data(wal, WAL_TYPE_EVM);
-        wal = generate_evm_wallet(mnemonic, false);
-            wal_data = checker.get_wallet_data(wal, WAL_TYPE_EVM);
         std::cout << "\033[38;5;214mmnemonic:\033[0m " << wal.mnemonic << "\n\033[38;5;214maddress:\033[0m  " << wal.address << "\n\033[38;5;214mbalance:\033[0m  ";
 
         if (wal_data.eth_amount == 0 && wal_data.bnb_amount == 0 && wal_data.matic_amount == 0) {
@@ -346,12 +324,11 @@ void start_search_evm_wallets(int way)
         }
         else {
             std::cout << "(with balance)\n";
-            save_wallet_data(wal, wal_data, WAL_TYPE_BTC);
-            found_balance += (wal_data.eth_amount * coingecko_api::get_eth_usdt_price()) + (wal_data.bnb_amount * coingecko_api::get_bnb_usdt_price()) +
-                (wal_data.matic_amount * coingecko_api::get_matic_usdt_price());
+            save_wallet_data(wal, wal_data, WAL_TYPE_EVM);
+            found_balance += wal_data.eth_amount;
 
             std::string new_title = "[WalletGen] - Found EVM wallet / [Checked mnemonics: " + std::to_string(checked_mnemonics) + " | Found balance: " + std::to_string(found_balance) +
-                "$ | Speed: " + std::to_string(speed) + "/s]";
+                " native | Speed: " + std::to_string(speed) + "/s]";
             SetConsoleTitleA(new_title.c_str());
             print_wallet(wal, WAL_TYPE_EVM);
             system("pause");
@@ -365,8 +342,8 @@ void start_search_evm_wallets(int way)
 
 
         if(checked_mnemonics % 100 == 0){
-        std::string new_title = "[WalletGen | " + std::string(TYPE) + "] - Seaching for EVM wallets / [Checked mnemonics: " + std::to_string(checked_mnemonics) + " | Found balance: " + std::to_string(found_balance) + 
-            "$ | Speed: " + std::to_string(speed) + "/s]";
+        std::string new_title = "[WalletGen | " + std::string(TYPE) + "] - Seaching for EVM wallets / [Checked mnemonics: " + std::to_string(checked_mnemonics) + " | Found balance: " + std::to_string(found_balance) +
+            " native | Speed: " + std::to_string(speed) + "/s]";
         SetConsoleTitleA(new_title.c_str());
 
         }
